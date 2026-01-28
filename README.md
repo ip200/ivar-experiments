@@ -43,7 +43,7 @@ python -m main.py --dataset DATASET --noise_level NOISE_LEVEL
 
 Run experiments on synthetic datasets with noise level 1:
 ```bash
-python -m main.py --dataset synthetic_datasets --noise_level 1
+python -m main.py --dataset synthetic_datasets --noise_level 1 --n_samples 10000
 ```
 
 Run experiments on real datasets:

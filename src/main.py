@@ -18,23 +18,21 @@ from venn_abers import VennAberRegressor
 from data.other_datasets.datasets import GetDataset
 from data.uci_repository_datasets.datasets import load_dataset
 
-
 import warnings
 warnings.filterwarnings("ignore")
 
-
 artificial_datasets = ['linear_gaussian', 'nonlinear_sine', 'heteroscedastic',
-                      'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift']
+                       'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift']
 friedman_datasets = ['friedman1', 'friedman2', 'friedman3']
 
 uci_datasets = ['airfoil', 'climate_bias', 'electricity']
 other_datasets = ['star']
 
-synthetic_datasets = artificial_datasets + friedman_datasets
-real_datasets = uci_datasets + other_datasets
+dataset_dict = dict()
+dataset_dict['synthetic_datasets'] = artificial_datasets + friedman_datasets
+dataset_dict['real_datasets'] = uci_datasets + other_datasets
 
 m_parameters = [1, 10]
-
 
 @dataclass
 class Dataset:
@@ -248,7 +246,7 @@ def run_one_scenario(
     return results, ds.meta
 
 def run_benchmark(
-    scenarios=synthetic_datasets,
+    scenarios,
     seeds=range(10),
     n_samples=5000,
     n_features=10,
@@ -281,10 +279,84 @@ def run_benchmark(
     )
     return df, summary
 
-random.seed(0)
-df_runs, df_summary = run_benchmark(scenarios = synthetic_datasets, n_samples=10000, n_features=10, noise_scale=1.0)
 
-df_summary.to_csv('output/synthetic_noise_1_10000.csv')
+
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run experiments on synthetic or real datasets."
+    )
+
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        choices=["synthetic_datasets", "real_datasets"],
+        help="Dataset to use: synthetic_datasets or real_datasets"
+    )
+
+    parser.add_argument(
+        "--n_samples",
+        type=int,
+        choices=[1000, 10000],
+        default=None,
+        help="Number of samples is 1000 or 10000"
+    )
+
+    parser.add_argument(
+        "--noise_level",
+        type=int,
+        choices=[1, 3],
+        default=None,
+        help="Noise level (only applicable for synthetic_datasets)"
+    )
+
+    return parser.parse_args()
+
+
+def main():
+
+    args = parse_args()
+
+    # Validate argument combination
+    if args.dataset == "real_datasets" and args.noise_level is not None:
+        raise ValueError(
+            "--noise_level is only applicable when dataset=synthetic_datasets"
+        )
+
+    if args.dataset == "synthetic_datasets" and args.noise_level is None:
+        raise ValueError(
+            "--noise_level must be specified when dataset=synthetic_datasets"
+        )
+
+    print(f"Dataset: {args.dataset}")
+    print(f"Number of samples: {args.n_samples}")
+    print(f"Noise level: {args.noise_level}")
+
+    random.seed(0)
+    if args.dataset == "synthetic_datasets":
+        _, df_summary = run_benchmark(
+            scenarios=dataset_dict[args.dataset],
+            n_samples=args.n_samples,
+            n_features=10,
+            noise_scale=args.noise_level)
+
+        df_summary.to_csv('output/'+ args.dataset + '_noise_' +
+                      str(int(args.noise_level)) + '_' + str(int(args.n_samples)) + '.csv')
+    else:
+
+        _, df_summary = run_benchmark(
+            scenarios=dataset_dict[args.dataset])
+
+        df_summary.to_csv('output/' + args.dataset + '.csv')
+
+
+if __name__ == "__main__":
+    main()
+
+
+
 
 
 
