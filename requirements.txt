@@ -1,0 +1,2 @@
+pandas
+venn-abers==1.5.0
