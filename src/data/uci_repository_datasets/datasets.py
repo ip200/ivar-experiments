@@ -46,13 +46,15 @@ UCI_GRID_ID = 471 # used via ucimlrepo
 
 # ----------------- Main unified loader ----------------- #
 
+from typing import Union
+
 def load_dataset(
     name: str,
     *,
     split: bool = True,
     test_size: float = 0.2,
     random_state: int = 0,
-    cache_dir: str | Path = "./uci_cache",
+    cache_dir: Union[str, Path] = "./uci_cache",
 ):
     """
     Unified loader for several standard regression datasets.
@@ -152,11 +154,34 @@ def load_dataset(
         meta={}
  
         
+    # ---- Wine Quality (Red) ----
+    elif name == "wine_red":
+        path = _download(UCI_WINE_RED_URL, cache_dir / "winequality-red.csv")
+        df = pd.read_csv(path, sep=";")
+        X = df.drop(columns=["quality"]).to_numpy(dtype=float)
+        y = df["quality"].to_numpy(dtype=float)
+        meta = {
+            "name": "Wine Quality (Red) (UCI)",
+            "n_samples": len(df),
+            "n_features": X.shape[1],
+        }
+
+    # ---- Wine Quality (White) ----
+    elif name == "wine_white":
+        path = _download(UCI_WINE_WHITE_URL, cache_dir / "winequality-white.csv")
+        df = pd.read_csv(path, sep=";")
+        X = df.drop(columns=["quality"]).to_numpy(dtype=float)
+        y = df["quality"].to_numpy(dtype=float)
+        meta = {
+            "name": "Wine Quality (White) (UCI)",
+            "n_samples": len(df),
+            "n_features": X.shape[1],
+        }
+
     else:
         raise ValueError(
             f"Unknown dataset name '{name}'. "
-            "Supported: 'electricity' "
-            "'airfoil', 'climate_bias'."
+            "Supported: 'electricity', 'airfoil', 'climate_bias', 'wine_red', 'wine_white'."
         )
 
     # ---- Return with or without split ----
