@@ -1,6 +1,6 @@
 # IVAR Benchmark Experiments
 
-This repository contains the complete experimental suite for the **Inductive Venn-Abers (IVAR) Predictors for Regression** benchmark. It supports high-scale replication across 10 synthetic datasets and 4 real-world benchmarks, including automated LaTeX table generation for ICML rebuttal documents.
+This repository contains the complete experimental suite for the **Inductive Venn-Abers (IVAR) Predictors for Regression** benchmark. It supports high-scale replication across 10 synthetic datasets and 4 real-world benchmarks, including automated LaTeX table generation.
 
 ## 🚀 Getting Started
 
@@ -39,18 +39,14 @@ python src/parallel_run.py
 
 ## 📊 Results & LaTeX Generation
 
-### Automated Rebuttal Tables (`src/generate_tables.py`)
-Once the experiments are complete, you can generate a comparison PDF that matches our experimental results against the original paper's reference values.
+### Automated Tables (`src/generate_tables.py`)
+Once the experiments are complete, you can generate a comparison PDF that matches our experimental results.
 
 ```bash
 python src/generate_tables.py
 pdflatex -output-directory=output output/generate_tables.tex
 ```
 
-**Features:**
-*   **Triple-Table Layout:** Side-by-side comparison of (A) Paper Reference, (B) Our Mean, and (C) Our Mean ± SEM.
-*   **Statistical Significance:** Automatically performs paired t-tests and appends `*` (95%) or `**` (99%) markers to bolded best-in-row values.
-*   **Friedman Correction:** Includes the logic to correct labelling swaps for Friedman 2/3 datasets.
 
 ## 📂 Project Structure
 *   `src/main.py`: The core training/calibration loop.
