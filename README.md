@@ -1,82 +1,63 @@
+# IVAR Benchmark Experiments
 
+This repository contains the complete experimental suite for the **Inductive Venn-Abers (IVAR) Predictors for Regression** benchmark. It supports high-scale replication across 10 synthetic datasets and 4 real-world benchmarks, including automated LaTeX table generation for ICML rebuttal documents.
 
-# IVAR-experiments
-A repository accompanying the paper Inductive Venn–Abers and related regressors containing code for running experiments on synthetic and real datasets and generating formatted result tables for analysis.
+## 🚀 Getting Started
 
----
-
-## Installation
-
-Clone the repository and install the required Python dependencies:
-
+### 1. Environment Setup
+We recommend using a Python virtual environment (3.10+):
 ```bash
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
+*Note: Key dependencies include `venn-abers==1.5.2`, `ucimlrepo`, `pandas`, `scikit-learn`, `scipy`, and `pypdf`.*
 
----
+## 🧪 Running Experiments
 
-## Running Experiments
+### Individual Scenarios (`src/main.py`)
+You can run a specific dataset configuration using the main entry point:
 
-All experiments are executed from the `src` directory using the main module.
+**Synthetic Example:**
+```bash
+python src/main.py --dataset synthetic_datasets --scenario linear_gaussian --n_samples 10000 --noise_level 3 --n_seeds 100 --save_details
+```
+
+**Real-World Example:**
+```bash
+python src/main.py --dataset real_datasets --scenario airfoil --n_seeds 100 --save_details
+```
+
+### Full Parallel Suite (`src/parallel_run.py`)
+To replicate the entire 49-table suite efficiently, use the parallel runner. It detects your CPU cores and distributes the 100-seed jobs to maximize throughput.
 
 ```bash
-python -m main.py --dataset DATASET --noise_level NOISE_LEVEL
+python src/parallel_run.py
 ```
+*   **Output:** Results are saved as individual CSVs in the `output/` directory.
+*   **Scalability:** The script is optimized for Mac M-series or high-core workstations.
 
-### Command-Line Arguments
+## 📊 Results & LaTeX Generation
 
-- `--dataset`  
-  Specifies the dataset type. Valid options are:
-  - `synthetic_datasets`
-  - `real_datasets`
+### Automated Rebuttal Tables (`src/generate_tables.py`)
+Once the experiments are complete, you can generate a comparison PDF that matches our experimental results against the original paper's reference values.
 
-- `--noise_level`  
-  Specifies the noise level applied to the data. Valid options are:
-  - `1`
-  - `3`
-
-  **Note:** This argument is only applicable when using `synthetic_datasets`. It is ignored when running experiments on real datasets.
-
----
-
-### Example Usage
-
-Run experiments on synthetic datasets with noise level 1:
 ```bash
-python -m main.py --dataset synthetic_datasets --noise_level 1 --n_samples 10000
+python src/generate_tables.py
+pdflatex -output-directory=output output/generate_tables.tex
 ```
 
-Run experiments on real datasets:
-```bash
-python -m main.py --dataset real_datasets
-```
+**Features:**
+*   **Triple-Table Layout:** Side-by-side comparison of (A) Paper Reference, (B) Our Mean, and (C) Our Mean ± SEM.
+*   **Statistical Significance:** Automatically performs paired t-tests and appends `*` (95%) or `**` (99%) markers to bolded best-in-row values.
+*   **Friedman Correction:** Includes the logic to correct labelling swaps for Friedman 2/3 datasets.
+
+## 📂 Project Structure
+*   `src/main.py`: The core training/calibration loop.
+*   `src/parallel_run.py`: Multi-core orchestration script.
+*   `src/generate_tables.py`: LaTeX document generator.
+*   `src/data/`: Data loading modules for UCI and local CSVs.
+*   `output/`: Directory where all CSVs, .tex, and .pdf artifacts are stored.
 
 ---
-
-## Output
-
-All experiment outputs are saved to the `output/` subdirectory.  
-This directory contains the raw results generated during execution.
-
----
-
-## Results Processing
-
-To process the experimental results and generate tex formatted tables, run the following Jupyter notebook:
-
-```text
-process_results.ipynb
-```
-
-The notebook reads data from the `output/` directory and produces **text-formatted tables** suitable for reporting and analysis.
-
----
-
-## Notes
-
-- Ensure commands are executed from the correct directory as specified above.
-- Noise levels are only relevant for synthetic datasets.
-- The repository is structured to support reproducible experimentation.
-
----
-
+*Developed for Advanced Agentic Coding Research.*

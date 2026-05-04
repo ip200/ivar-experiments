@@ -109,7 +109,8 @@ def load_dataset(
 
     # ---- Climate prediction: bias correction of NWP temperature forecast ----
     elif name == "climate_bias":
-        data = pd.read_csv('Bias_correction_ucl.csv').dropna()
+        module_path = Path(__file__).parent
+        data = pd.read_csv(module_path / 'Bias_correction_ucl.csv').dropna()
         features = ['Present_Tmax', 'Present_Tmin', 'LDAPS_RHmin',
        'LDAPS_RHmax', 'LDAPS_Tmax_lapse', 'LDAPS_Tmin_lapse', 'LDAPS_WS',
        'LDAPS_LH', 'LDAPS_CC1', 'LDAPS_CC2', 'LDAPS_CC3', 'LDAPS_CC4',
@@ -139,18 +140,11 @@ def load_dataset(
         }
     elif name == "electricity":
         # uses the official ucimlrepo helper suggested on the UCI page
-        try:
-            from ucimlrepo import fetch_ucirepo
-        except ImportError as e:
-            raise ImportError(
-                "Dataset 'climate_bias' requires the 'ucimlrepo' package. "
-                "Install it via `pip install ucimlrepo`."
-            ) from e
+        from ucimlrepo import fetch_ucirepo
 
         ds = fetch_ucirepo(id=UCI_GRID_ID)
         X=ds.data.features.values
         y=ds.data.targets.iloc[:,0].values
-        print(y)
         meta={}
  
         

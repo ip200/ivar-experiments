@@ -10,11 +10,12 @@ from sklearn.svm import SVR
 import os, sys
 import random
 
-module_path = os.path.abspath(os.path.join('..'))
+module_path = os.path.dirname(os.path.abspath(__file__))
 if module_path not in sys.path:
     sys.path.append(module_path)
+project_root = os.path.dirname(module_path)
 
-from venn_abers import VennAberRegressor
+from venn_abers import VennAbersRegressor
 from data.other_datasets.datasets import GetDataset
 from data.uci_repository_datasets.datasets import load_dataset
 
@@ -25,7 +26,7 @@ artificial_datasets = ['linear_gaussian', 'nonlinear_sine', 'heteroscedastic',
                        'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift', 'bounded_logistic']
 friedman_datasets = ['friedman1', 'friedman2', 'friedman3']
 
-uci_datasets = ['airfoil', 'climate_bias', 'electricity', 'wine_red']
+uci_datasets = ['airfoil', 'wine_red', 'climate_bias', 'electricity']
 other_datasets = ['star']
 
 dataset_dict = dict()
@@ -190,13 +191,14 @@ def make_synth_regression(
     else:
         try:
             if scenario in other_datasets:
-                X, y = GetDataset(scenario, base_path=module_path + '/src/data/other_datasets')
+                X, y = GetDataset(scenario, base_path=module_path + '/data/other_datasets/')
                 standardize = True
                 meta = {"scenario": scenario, "noise": "dataset"}
             elif scenario in uci_datasets:
-                X, y, _ = load_dataset(scenario, split=False)
+                # Note: load_dataset handles climate_bias and electricity internally
+                res = load_dataset(scenario, split=False, cache_dir=project_root + '/uci_cache')
+                X, y, meta = res
                 standardize = True
-                meta = {"scenario": scenario, "noise": "dataset"}
             elif scenario in friedman_datasets:
                 if scenario == 'friedman1':
                     X, y = make_friedman1(n_samples=n_samples, noise=noise_scale, random_state=random_state)
@@ -209,7 +211,10 @@ def make_synth_regression(
                     meta = {"scenario": scenario, "noise": "dataset"}
                 y_true_mean = None # Cannot easily get true mean for sklearn make_friedman without noise=0
 
-        except:
+        except Exception as e:
+            print(f"Error loading {scenario}: {e}")
+            import traceback
+            traceback.print_exc()
             raise ValueError(f"Unknown scenario: {scenario}")
 
     X_train, X_test, y_train, y_test, y_true_mean_test = _train_test_split(X, y, test_size, rng, y_true_mean)
@@ -245,12 +250,23 @@ def calibration_error(y_true, y_pred, n_bins=10):
     return np.mean(errs)
 
 
-def compute_metrics(y_test, y_pred, intervals=None, y_true_mean=None, y_train=None):
+def compute_metrics(y_test, y_pred, intervals=None, y_true_mean=None, y_train=None, model=None, true_w=None):
     res = {
         "rmse": rmse(y_test, y_pred),
         "calib_err": calibration_error(y_test, y_pred)
     }
     
+    if model is not None and true_w is not None:
+        if hasattr(model, 'coef_'):
+            w_pred = model.coef_.flatten()
+            w_true = true_w.flatten()
+            if len(w_pred) == len(w_true):
+                res["weight_mse"] = float(np.mean((w_pred - w_true)**2))
+        elif hasattr(model, 'feature_importances_'):
+            # For non-linear models, we could use feature importances as a proxy, 
+            # but Weight MSE specifically refers to coefficient recovery.
+            pass
+
     if intervals is not None:
         # intervals is (n, 2)
         lower = intervals[:, 0]
@@ -287,7 +303,7 @@ def baseline_models(random_state: int = 0):
         "Lasso": Lasso(),
         "ElasticNet": ElasticNet(),
         "SVR(RBF)": SVR(),
-        "RandomForest": RandomForestRegressor(random_state=random_state, n_jobs=-1),
+        "RandomForest": RandomForestRegressor(random_state=random_state, n_jobs=1),
         "GradientBoosting": GradientBoostingRegressor(random_state=random_state)
 
     }
@@ -314,19 +330,15 @@ def run_one_scenario(
     for name, model in baseline_models(random_state=seed).items():
         model.fit(ds.X_train, ds.y_train)
         base_pred = model.predict(ds.X_test)
-        results[name] = compute_metrics(ds.y_test, base_pred, y_train=ds.y_train)
+        results[name] = compute_metrics(ds.y_test, base_pred, y_train=ds.y_train, model=model, true_w=ds.meta.get('w'))
         
-        va = VennAberRegressor(estimator=model, inductive=False, n_splits=10, random_state=seed)
+        va = VennAbersRegressor(estimator=model, inductive=False, n_splits=10, random_state=seed)
         for m in m_parameters:
             va.fit(ds.X_train, ds.y_train, m=m)
             va_preds, intervals = va.predict(ds.X_test)
-            # intervals is [L1...LN, U1...UN]
-            n_samples_test = len(va_preds)
-            lower = intervals[:n_samples_test]
-            upper = intervals[n_samples_test:]
-            intervals = np.column_stack((lower, upper))
             results[name + ' CVAP - ' + str(m)] = compute_metrics(
-                ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
+                ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train,
+                model=model, true_w=ds.meta.get('w')
             )
 
     return results, ds.meta
@@ -402,7 +414,7 @@ def parse_args():
     parser.add_argument(
         "--noise_level",
         type=int,
-        choices=[1, 3],
+        choices=[1, 2, 3],
         default=None,
         help="Noise level (only applicable for synthetic_datasets)"
     )
@@ -418,6 +430,13 @@ def parse_args():
         type=int,
         default=10,
         help="Number of seeds to run (default: 10)"
+    )
+    
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Specific scenario to run (optional)"
     )
 
     return parser.parse_args()
@@ -442,32 +461,38 @@ def main():
     print(f"Number of samples: {args.n_samples}")
     print(f"Noise level: {args.noise_level}")
     print(f"Number of seeds: {args.n_seeds}")
+    if args.scenario:
+        print(f"Scenario: {args.scenario}")
 
     random.seed(0)
     if args.dataset == "synthetic_datasets":
+        scenarios = [args.scenario] if args.scenario else dataset_dict[args.dataset]
         df, df_summary = run_benchmark(
-            scenarios=dataset_dict[args.dataset],
+            scenarios=scenarios,
             seeds=range(args.n_seeds),
             n_samples=args.n_samples,
             n_features=10,
             noise_scale=args.noise_level)
 
-        base_name = f"output/{args.dataset}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+        if args.scenario:
+            base_name = f"output/{args.dataset}_{args.scenario}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+        else:
+            base_name = f"output/{args.dataset}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+        
         df_summary.to_csv(base_name + '.csv')
         if args.save_details:
             df.to_csv(base_name + '_details.csv')
     else:
-
+        scenarios = [args.scenario] if args.scenario else dataset_dict[args.dataset]
         df, df_summary = run_benchmark(
-            scenarios=dataset_dict[args.dataset],
+            scenarios=scenarios,
             seeds=range(args.n_seeds))
 
-        base_name = f"output/{args.dataset}"
-        df_summary.to_csv(base_name + '.csv')
-        if args.save_details:
-            df.to_csv(base_name + '_details.csv')
-
-        base_name = f"output/{args.dataset}"
+        if args.scenario:
+            base_name = f"output/{args.dataset}_{args.scenario}"
+        else:
+            base_name = f"output/{args.dataset}"
+            
         df_summary.to_csv(base_name + '.csv')
         if args.save_details:
             df.to_csv(base_name + '_details.csv')
