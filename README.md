@@ -60,4 +60,3 @@ pdflatex -output-directory=output output/generate_tables.tex
 *   `output/`: Directory where all CSVs, .tex, and .pdf artifacts are stored.
 
 ---
-*Developed for Advanced Agentic Coding Research.*
