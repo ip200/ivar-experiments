@@ -172,6 +172,29 @@ def load_dataset(
             "n_features": X.shape[1],
         }
 
+    # ---- Wine Quality (Combined Red & White) ----
+    elif name == "wine_both":
+        path_red = _download(UCI_WINE_RED_URL, cache_dir / "winequality-red.csv")
+        path_white = _download(UCI_WINE_WHITE_URL, cache_dir / "winequality-white.csv")
+        
+        df_red = pd.read_csv(path_red, sep=";")
+        df_white = pd.read_csv(path_white, sep=";")
+        
+        # Add color feature: 0 for red, 1 for white
+        df_red["color"] = 0.0
+        df_white["color"] = 1.0
+        
+        df = pd.concat([df_red, df_white], axis=0, ignore_index=True)
+        
+        X = df.drop(columns=["quality"]).to_numpy(dtype=float)
+        y = df["quality"].to_numpy(dtype=float)
+        
+        meta = {
+            "name": "Wine Quality (Combined) (UCI)",
+            "n_samples": len(df),
+            "n_features": X.shape[1],
+        }
+
     else:
         raise ValueError(
             f"Unknown dataset name '{name}'. "

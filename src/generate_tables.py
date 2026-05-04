@@ -194,7 +194,7 @@ def generate_rebuttal():
         (42, "climate_bias", "climate_bias", "Bias Correction (UCI)"),
         (44, "airfoil", "airfoil", "Airfoil Self-Noise (UCI)"),
         (43, "star", "star", "Student Performance (STAR)"),
-        (None, "wine_red", "wine_red", "Wine Quality (Red)")
+        (43, "wine_both", "wine_both", "Wine Quality (Combined)")
     ]
     
     for table_num, sc, csv_sc, title_name in real_tasks:

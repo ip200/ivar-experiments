@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # 41: Electricity, 42: Bias Correction, 43: Wine Red (Replacement), 44: Airfoil
     all_tasks.append(["real_datasets", "electricity", None, None, 41])
     all_tasks.append(["real_datasets", "climate_bias", None, None, 42])
-    all_tasks.append(["real_datasets", "wine_red", None, None, 43])
+    all_tasks.append(["real_datasets", "wine_both", None, None, 43])
     all_tasks.append(["real_datasets", "airfoil", None, None, 44])
     
     # Tables 45-47: New Bounded Synthetic (Noise 1, 2, 3 at 10000 samples)

@@ -26,7 +26,7 @@ artificial_datasets = ['linear_gaussian', 'nonlinear_sine', 'heteroscedastic',
                        'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift', 'bounded_logistic']
 friedman_datasets = ['friedman1', 'friedman2', 'friedman3']
 
-uci_datasets = ['airfoil', 'wine_red', 'climate_bias', 'electricity']
+uci_datasets = ['airfoil', 'wine_both', 'climate_bias', 'electricity']
 other_datasets = ['star']
 
 dataset_dict = dict()
@@ -428,8 +428,15 @@ def parse_args():
     parser.add_argument(
         "--n_seeds",
         type=int,
-        default=10,
-        help="Number of seeds to run (default: 10)"
+        default=100,
+        help="Number of seeds to run (default: 100)"
+    )
+
+    parser.add_argument(
+        "--seed_offset",
+        type=int,
+        default=0,
+        help="Starting seed index (default: 0)"
     )
     
     parser.add_argument(
@@ -437,6 +444,13 @@ def parse_args():
         type=str,
         default=None,
         help="Specific scenario to run (optional)"
+    )
+
+    parser.add_argument(
+        "--output_suffix",
+        type=str,
+        default="",
+        help="Suffix to append to output filenames"
     )
 
     return parser.parse_args()
@@ -469,15 +483,15 @@ def main():
         scenarios = [args.scenario] if args.scenario else dataset_dict[args.dataset]
         df, df_summary = run_benchmark(
             scenarios=scenarios,
-            seeds=range(args.n_seeds),
+            seeds=range(args.seed_offset, args.seed_offset + args.n_seeds),
             n_samples=args.n_samples,
             n_features=10,
             noise_scale=args.noise_level)
 
         if args.scenario:
-            base_name = f"output/{args.dataset}_{args.scenario}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+            base_name = f"output/{args.dataset}_{args.scenario}_noise_{int(args.noise_level)}_{int(args.n_samples)}{args.output_suffix}"
         else:
-            base_name = f"output/{args.dataset}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+            base_name = f"output/{args.dataset}_noise_{int(args.noise_level)}_{int(args.n_samples)}{args.output_suffix}"
         
         df_summary.to_csv(base_name + '.csv')
         if args.save_details:
@@ -486,12 +500,12 @@ def main():
         scenarios = [args.scenario] if args.scenario else dataset_dict[args.dataset]
         df, df_summary = run_benchmark(
             scenarios=scenarios,
-            seeds=range(args.n_seeds))
+            seeds=range(args.seed_offset, args.seed_offset + args.n_seeds))
 
         if args.scenario:
-            base_name = f"output/{args.dataset}_{args.scenario}"
+            base_name = f"output/{args.dataset}_{args.scenario}{args.output_suffix}"
         else:
-            base_name = f"output/{args.dataset}"
+            base_name = f"output/{args.dataset}{args.output_suffix}"
             
         df_summary.to_csv(base_name + '.csv')
         if args.save_details:
