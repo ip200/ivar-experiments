@@ -19,7 +19,7 @@ def GetDataset(name, base_path):
 	"""
 
     if name=="star":
-        df = pd.read_csv(base_path + 'STAR.csv')
+        df = pd.read_csv(base_path + 'STAR.csv').astype(object)
         df.loc[df['gender'] == 'female', 'gender'] = 0
         df.loc[df['gender'] == 'male', 'gender'] = 1
         

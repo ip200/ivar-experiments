@@ -10,11 +10,12 @@ from sklearn.svm import SVR
 import os, sys
 import random
 
-module_path = os.path.abspath(os.path.join('..'))
+module_path = os.path.dirname(os.path.abspath(__file__))
 if module_path not in sys.path:
     sys.path.append(module_path)
+project_root = os.path.dirname(module_path)
 
-from venn_abers import VennAberRegressor
+from venn_abers import VennAbersRegressor
 from data.other_datasets.datasets import GetDataset
 from data.uci_repository_datasets.datasets import load_dataset
 
@@ -22,10 +23,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 artificial_datasets = ['linear_gaussian', 'nonlinear_sine', 'heteroscedastic',
-                       'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift']
+                       'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift', 'bounded_logistic']
 friedman_datasets = ['friedman1', 'friedman2', 'friedman3']
 
-uci_datasets = ['airfoil', 'climate_bias', 'electricity']
+uci_datasets = ['airfoil', 'wine_red', 'climate_bias', 'electricity']
 other_datasets = ['star']
 
 dataset_dict = dict()
@@ -41,15 +42,24 @@ class Dataset:
     X_test: np.ndarray
     y_test: np.ndarray
     meta: Dict
+    y_true_mean: Optional[np.ndarray] = None
 
 
-def _train_test_split(X, y, test_size: float, rng: np.random.Generator):
+def _train_test_split(X, y, test_size: float, rng: np.random.Generator, y_true_mean: Optional[np.ndarray] = None):
     n = X.shape[0]
     idx = rng.permutation(n)
     n_test = int(np.round(n * test_size))
     test_idx = idx[:n_test]
     train_idx = idx[n_test:]
-    return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
+    
+    X_train, X_test = X[train_idx], X[test_idx]
+    y_train, y_test = y[train_idx], y[test_idx]
+    
+    y_true_mean_test = None
+    if y_true_mean is not None:
+        y_true_mean_test = y_true_mean[test_idx]
+        
+    return X_train, X_test, y_train, y_test, y_true_mean_test
 
 
 def make_synth_regression(
@@ -76,12 +86,14 @@ def make_synth_regression(
 
     # For most scenarios we generate a single pool then split.
     X = rng.normal(size=(n_samples, n_features))
+    y_true_mean = None
 
     if scenario == "linear_gaussian":
         w = rng.normal(size=n_features)
         y_clean = X @ w
         eps = rng.normal(scale=noise_scale, size=n_samples)
         y = y_clean + eps
+        y_true_mean = y_clean
         meta = {"scenario": scenario, "noise": "gaussian", "w": w}
 
     elif scenario == "nonlinear_sine":
@@ -95,6 +107,7 @@ def make_synth_regression(
         y_clean = lin + nl
         eps = rng.normal(scale=noise_scale, size=n_samples)
         y = y_clean + eps
+        y_true_mean = y_clean
         meta = {"scenario": scenario, "noise": "gaussian", "w": w}
 
     elif scenario == "heteroscedastic":
@@ -103,6 +116,7 @@ def make_synth_regression(
         local_scale = noise_scale * (0.5 + np.abs(X[:, 0]))  # depends on feature 0
         eps = rng.normal(scale=local_scale, size=n_samples)
         y = y_clean + eps
+        y_true_mean = y_clean
         meta = {"scenario": scenario, "noise": "heteroscedastic", "w": w}
 
     elif scenario == "heavy_tailed":
@@ -111,6 +125,7 @@ def make_synth_regression(
         dof = 3.0
         eps = rng.standard_t(df=dof, size=n_samples) * noise_scale
         y = y_clean + eps
+        y_true_mean = y_clean
         meta = {"scenario": scenario, "noise": f"student_t(df={dof})", "w": w}
 
     elif scenario == "outliers":
@@ -122,6 +137,7 @@ def make_synth_regression(
         mask = rng.random(n_samples) < p_out
         eps = np.where(mask, out, base)
         y = y_clean + eps
+        y_true_mean = y_clean
         meta = {"scenario": scenario, "noise": "mixture_outliers", "p_out": p_out, "w": w}
 
     elif scenario == "sparse_highdim":
@@ -132,7 +148,18 @@ def make_synth_regression(
         y_clean = X @ w
         eps = rng.normal(scale=noise_scale, size=n_samples)
         y = y_clean + eps
+        y_true_mean = y_clean
         meta = {"scenario": scenario, "noise": "gaussian", "k": k, "support": support, "w": w}
+
+    elif scenario == "bounded_logistic":
+        # Logistic bounded scenario
+        w = rng.normal(size=n_features)
+        lin = X @ w
+        y_clean = 10.0 / (1.0 + np.exp(-lin)) # Bounded between 0 and 10
+        eps = rng.normal(scale=noise_scale, size=n_samples)
+        y = y_clean + eps
+        y_true_mean = y_clean
+        meta = {"scenario": scenario, "noise": "gaussian", "w": w, "bounded": True}
 
     elif scenario == "covariate_shift":
         # Force shift by sampling train/test from different distributions.
@@ -143,8 +170,10 @@ def make_synth_regression(
         X_test = rng.normal(loc=1.0, scale=1.0, size=(n_test, n_features))
 
         w = rng.normal(size=n_features)
-        y_train = X_train @ w + rng.normal(scale=noise_scale, size=n_train)
-        y_test = X_test @ w + rng.normal(scale=noise_scale, size=n_test)
+        y_train_clean = X_train @ w
+        y_test_clean = X_test @ w
+        y_train = y_train_clean + rng.normal(scale=noise_scale, size=n_train)
+        y_test = y_test_clean + rng.normal(scale=noise_scale, size=n_test)
 
         if standardize:
             mu = X_train.mean(axis=0, keepdims=True)
@@ -156,33 +185,39 @@ def make_synth_regression(
             X_train=X_train, y_train=y_train,
             X_test=X_test, y_test=y_test,
             meta={"scenario": scenario, "noise": "gaussian", "shift": True, "w": w},
+            y_true_mean=y_test_clean
         )
 
     else:
         try:
             if scenario in other_datasets:
-                X, y = GetDataset(scenario, base_path=module_path + '/src/data/other_datasets')
+                X, y = GetDataset(scenario, base_path=module_path + '/data/other_datasets/')
                 standardize = True
                 meta = {"scenario": scenario, "noise": "dataset"}
             elif scenario in uci_datasets:
-                X, y, _ = load_dataset(scenario, split=False)
+                # Note: load_dataset handles climate_bias and electricity internally
+                res = load_dataset(scenario, split=False, cache_dir=project_root + '/uci_cache')
+                X, y, meta = res
                 standardize = True
-                meta = {"scenario": scenario, "noise": "dataset"}
             elif scenario in friedman_datasets:
-                if scenario == friedman_datasets[0]:
+                if scenario == 'friedman1':
                     X, y = make_friedman1(n_samples=n_samples, noise=noise_scale, random_state=random_state)
                     meta = {"scenario": scenario, "noise": "dataset"}
-                elif scenario == friedman_datasets[2]:
+                elif scenario == 'friedman2':
                     X, y = make_friedman2(n_samples=n_samples, noise=noise_scale, random_state=random_state)
                     meta = {"scenario": scenario, "noise": "dataset"}
                 else:
                     X, y = make_friedman3(n_samples=n_samples, noise=noise_scale, random_state=random_state)
                     meta = {"scenario": scenario, "noise": "dataset"}
+                y_true_mean = None # Cannot easily get true mean for sklearn make_friedman without noise=0
 
-        except:
+        except Exception as e:
+            print(f"Error loading {scenario}: {e}")
+            import traceback
+            traceback.print_exc()
             raise ValueError(f"Unknown scenario: {scenario}")
 
-    X_train, X_test, y_train, y_test = _train_test_split(X, y, test_size, rng)
+    X_train, X_test, y_train, y_test, y_true_mean_test = _train_test_split(X, y, test_size, rng, y_true_mean)
 
     if standardize:
         mu = X_train.mean(axis=0, keepdims=True)
@@ -194,11 +229,70 @@ def make_synth_regression(
         X_train=X_train, y_train=y_train,
         X_test=X_test, y_test=y_test,
         meta=meta,
+        y_true_mean=y_true_mean_test
     )
 
 
 def rmse(y_true, y_pred) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
+def calibration_error(y_true, y_pred, n_bins=10):
+    ORDER = np.argsort(y_pred)
+    bins = np.array_split(ORDER, n_bins)
+
+    errs = []
+    for b in bins:
+        if len(b) == 0:
+            continue
+        errs.append(abs(y_true[b].mean() - y_pred[b].mean()))
+
+    return np.mean(errs)
+
+
+def compute_metrics(y_test, y_pred, intervals=None, y_true_mean=None, y_train=None, model=None, true_w=None):
+    res = {
+        "rmse": rmse(y_test, y_pred),
+        "calib_err": calibration_error(y_test, y_pred)
+    }
+    
+    if model is not None and true_w is not None:
+        if hasattr(model, 'coef_'):
+            w_pred = model.coef_.flatten()
+            w_true = true_w.flatten()
+            if len(w_pred) == len(w_true):
+                res["weight_mse"] = float(np.mean((w_pred - w_true)**2))
+        elif hasattr(model, 'feature_importances_'):
+            # For non-linear models, we could use feature importances as a proxy, 
+            # but Weight MSE specifically refers to coefficient recovery.
+            pass
+
+    if intervals is not None:
+        # intervals is (n, 2)
+        lower = intervals[:, 0]
+        upper = intervals[:, 1]
+        width = upper - lower
+        
+        # Normalize by std(y_train) if provided
+        norm_factor = 1.0
+        if y_train is not None:
+            norm_factor = np.std(y_train) if np.std(y_train) > 0 else 1.0
+        
+        norm_width = width / norm_factor
+        
+        res.update({
+            "width_mean": np.mean(norm_width),
+            "width_median": np.median(norm_width),
+            "width_std": np.std(norm_width),
+            "width_p90": np.percentile(norm_width, 90),
+        })
+        
+        if y_true_mean is not None:
+            # Containment of true conditional mean
+            contained = (y_true_mean >= lower) & (y_true_mean <= upper)
+            res["mean_containment"] = np.mean(contained)
+            
+    return res
 
 
 def baseline_models(random_state: int = 0):
@@ -209,7 +303,7 @@ def baseline_models(random_state: int = 0):
         "Lasso": Lasso(),
         "ElasticNet": ElasticNet(),
         "SVR(RBF)": SVR(),
-        "RandomForest": RandomForestRegressor(random_state=random_state, n_jobs=-1),
+        "RandomForest": RandomForestRegressor(random_state=random_state, n_jobs=1),
         "GradientBoosting": GradientBoostingRegressor(random_state=random_state)
 
     }
@@ -236,12 +330,16 @@ def run_one_scenario(
     for name, model in baseline_models(random_state=seed).items():
         model.fit(ds.X_train, ds.y_train)
         base_pred = model.predict(ds.X_test)
-        results[name] = rmse(ds.y_test, base_pred)
-        va = VennAberRegressor(estimator=model, inductive=False, n_splits=10, random_state=seed)
+        results[name] = compute_metrics(ds.y_test, base_pred, y_train=ds.y_train, model=model, true_w=ds.meta.get('w'))
+        
+        va = VennAbersRegressor(estimator=model, inductive=False, n_splits=10, random_state=seed)
         for m in m_parameters:
             va.fit(ds.X_train, ds.y_train, m=m)
-            va_preds, _ = va.predict(ds.X_test)
-            results[name + ' CVAP - ' + str(m)] = rmse(ds.y_test, va_preds)
+            va_preds, intervals = va.predict(ds.X_test)
+            results[name + ' CVAP - ' + str(m)] = compute_metrics(
+                ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train,
+                model=model, true_w=ds.meta.get('w')
+            )
 
     return results, ds.meta
 
@@ -262,21 +360,30 @@ def run_benchmark(
                 noise_scale=noise_scale,
                 seed=seed,
             )
-            for model_name, score in res.items():
-                rows.append({
+            for model_name, metrics in res.items():
+                row = {
                     "scenario": sc,
                     "seed": seed,
                     "model": model_name,
-                    "rmse": score,
-                })
+                }
+                row.update(metrics)
+                rows.append(row)
 
     df = pd.DataFrame(rows)
+    
+    # Aggregation for all metric columns
+    metric_cols = [c for c in df.columns if c not in ["scenario", "seed", "model"]]
     summary = (
-        df.groupby(["scenario", "model"])["rmse"]
-          .agg(["mean", "std", "count"])
+        df.groupby(["scenario", "model"])[metric_cols]
+          .agg(["mean", "std"])
           .reset_index()
-          .sort_values(["scenario", "mean"])
     )
+    # Flatten multi-index columns
+    summary.columns = [
+        '_'.join(col).strip('_') if isinstance(col, tuple) else col 
+        for col in summary.columns.values
+    ]
+    
     return df, summary
 
 
@@ -307,9 +414,29 @@ def parse_args():
     parser.add_argument(
         "--noise_level",
         type=int,
-        choices=[1, 3],
+        choices=[1, 2, 3],
         default=None,
         help="Noise level (only applicable for synthetic_datasets)"
+    )
+
+    parser.add_argument(
+        "--save_details",
+        action="store_true",
+        help="If set, save per-sample predictions and metrics to a separate CSV"
+    )
+
+    parser.add_argument(
+        "--n_seeds",
+        type=int,
+        default=10,
+        help="Number of seeds to run (default: 10)"
+    )
+    
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Specific scenario to run (optional)"
     )
 
     return parser.parse_args()
@@ -333,23 +460,42 @@ def main():
     print(f"Dataset: {args.dataset}")
     print(f"Number of samples: {args.n_samples}")
     print(f"Noise level: {args.noise_level}")
+    print(f"Number of seeds: {args.n_seeds}")
+    if args.scenario:
+        print(f"Scenario: {args.scenario}")
 
     random.seed(0)
     if args.dataset == "synthetic_datasets":
-        _, df_summary = run_benchmark(
-            scenarios=dataset_dict[args.dataset],
+        scenarios = [args.scenario] if args.scenario else dataset_dict[args.dataset]
+        df, df_summary = run_benchmark(
+            scenarios=scenarios,
+            seeds=range(args.n_seeds),
             n_samples=args.n_samples,
             n_features=10,
             noise_scale=args.noise_level)
 
-        df_summary.to_csv('output/'+ args.dataset + '_noise_' +
-                      str(int(args.noise_level)) + '_' + str(int(args.n_samples)) + '.csv')
+        if args.scenario:
+            base_name = f"output/{args.dataset}_{args.scenario}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+        else:
+            base_name = f"output/{args.dataset}_noise_{int(args.noise_level)}_{int(args.n_samples)}"
+        
+        df_summary.to_csv(base_name + '.csv')
+        if args.save_details:
+            df.to_csv(base_name + '_details.csv')
     else:
+        scenarios = [args.scenario] if args.scenario else dataset_dict[args.dataset]
+        df, df_summary = run_benchmark(
+            scenarios=scenarios,
+            seeds=range(args.n_seeds))
 
-        _, df_summary = run_benchmark(
-            scenarios=dataset_dict[args.dataset])
-
-        df_summary.to_csv('output/' + args.dataset + '.csv')
+        if args.scenario:
+            base_name = f"output/{args.dataset}_{args.scenario}"
+        else:
+            base_name = f"output/{args.dataset}"
+            
+        df_summary.to_csv(base_name + '.csv')
+        if args.save_details:
+            df.to_csv(base_name + '_details.csv')
 
 
 if __name__ == "__main__":

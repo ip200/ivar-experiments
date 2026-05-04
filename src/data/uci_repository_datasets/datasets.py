@@ -46,13 +46,15 @@ UCI_GRID_ID = 471 # used via ucimlrepo
 
 # ----------------- Main unified loader ----------------- #
 
+from typing import Union
+
 def load_dataset(
     name: str,
     *,
     split: bool = True,
     test_size: float = 0.2,
     random_state: int = 0,
-    cache_dir: str | Path = "./uci_cache",
+    cache_dir: Union[str, Path] = "./uci_cache",
 ):
     """
     Unified loader for several standard regression datasets.
@@ -107,7 +109,8 @@ def load_dataset(
 
     # ---- Climate prediction: bias correction of NWP temperature forecast ----
     elif name == "climate_bias":
-        data = pd.read_csv('Bias_correction_ucl.csv').dropna()
+        module_path = Path(__file__).parent
+        data = pd.read_csv(module_path / 'Bias_correction_ucl.csv').dropna()
         features = ['Present_Tmax', 'Present_Tmin', 'LDAPS_RHmin',
        'LDAPS_RHmax', 'LDAPS_Tmax_lapse', 'LDAPS_Tmin_lapse', 'LDAPS_WS',
        'LDAPS_LH', 'LDAPS_CC1', 'LDAPS_CC2', 'LDAPS_CC3', 'LDAPS_CC4',
@@ -137,26 +140,42 @@ def load_dataset(
         }
     elif name == "electricity":
         # uses the official ucimlrepo helper suggested on the UCI page
-        try:
-            from ucimlrepo import fetch_ucirepo
-        except ImportError as e:
-            raise ImportError(
-                "Dataset 'climate_bias' requires the 'ucimlrepo' package. "
-                "Install it via `pip install ucimlrepo`."
-            ) from e
+        from ucimlrepo import fetch_ucirepo
 
         ds = fetch_ucirepo(id=UCI_GRID_ID)
         X=ds.data.features.values
         y=ds.data.targets.iloc[:,0].values
-        print(y)
         meta={}
  
         
+    # ---- Wine Quality (Red) ----
+    elif name == "wine_red":
+        path = _download(UCI_WINE_RED_URL, cache_dir / "winequality-red.csv")
+        df = pd.read_csv(path, sep=";")
+        X = df.drop(columns=["quality"]).to_numpy(dtype=float)
+        y = df["quality"].to_numpy(dtype=float)
+        meta = {
+            "name": "Wine Quality (Red) (UCI)",
+            "n_samples": len(df),
+            "n_features": X.shape[1],
+        }
+
+    # ---- Wine Quality (White) ----
+    elif name == "wine_white":
+        path = _download(UCI_WINE_WHITE_URL, cache_dir / "winequality-white.csv")
+        df = pd.read_csv(path, sep=";")
+        X = df.drop(columns=["quality"]).to_numpy(dtype=float)
+        y = df["quality"].to_numpy(dtype=float)
+        meta = {
+            "name": "Wine Quality (White) (UCI)",
+            "n_samples": len(df),
+            "n_features": X.shape[1],
+        }
+
     else:
         raise ValueError(
             f"Unknown dataset name '{name}'. "
-            "Supported: 'electricity' "
-            "'airfoil', 'climate_bias'."
+            "Supported: 'electricity', 'airfoil', 'climate_bias', 'wine_red', 'wine_white'."
         )
 
     # ---- Return with or without split ----
