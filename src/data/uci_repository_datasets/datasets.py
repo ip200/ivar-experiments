@@ -198,7 +198,7 @@ def load_dataset(
     else:
         raise ValueError(
             f"Unknown dataset name '{name}'. "
-            "Supported: 'electricity', 'airfoil', 'climate_bias', 'wine_red', 'wine_white'."
+            "Supported: 'electricity', 'airfoil', 'climate_bias', 'wine_red', 'wine_white', 'wine_both'."
         )
 
     # ---- Return with or without split ----

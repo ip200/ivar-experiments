@@ -26,7 +26,7 @@ artificial_datasets = ['linear_gaussian', 'nonlinear_sine', 'heteroscedastic',
                        'heavy_tailed', 'outliers', 'sparse_highdim', 'covariate_shift', 'bounded_logistic']
 friedman_datasets = ['friedman1', 'friedman2', 'friedman3']
 
-uci_datasets = ['airfoil', 'wine_both', 'climate_bias', 'electricity']
+uci_datasets = ['airfoil', 'wine_red', 'wine_white', 'wine_both', 'climate_bias', 'electricity']
 other_datasets = ['star']
 
 dataset_dict = dict()
