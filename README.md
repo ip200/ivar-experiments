@@ -1,6 +1,6 @@
-# IVAR Benchmark Experiments
+# Inductive Venn–Abers and related regressors benchmark experiments
 
-This repository contains the complete experimental suite for the **Inductive Venn-Abers (IVAR) Predictors for Regression** benchmark. It supports high-scale replication across 10 synthetic datasets and 4 real-world benchmarks, including automated LaTeX table generation.
+This repository contains the complete experimental suite for the **Inductive Venn–Abers and related regressors** publication. It supports high-scale replication across 11 synthetic datasets and 4 real-world benchmarks, including automated LaTeX table generation.
 
 ## 🚀 Getting Started
 
