@@ -17,4 +17,4 @@ scipy==1.17.1
 six==1.17.0
 threadpoolctl==3.6.0
 ucimlrepo==0.0.7
-venn-abers==1.5.2
+venn-abers>=1.5.3
