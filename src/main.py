@@ -15,6 +15,83 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 from venn_abers import VennAberRegressor
+
+class VennAberRegressorLooseBounds(VennAberRegressor):
+    def __init__(
+            self,
+            estimator=None,
+            inductive=True,
+            n_splits=None,
+            cal_size=None,
+            train_proper_size=None,
+            random_state=None,
+            shuffle=True,
+            quantile=None
+    ):
+        super().__init__(
+            estimator=estimator,
+            inductive=inductive,
+            n_splits=n_splits,
+            cal_size=cal_size,
+            train_proper_size=train_proper_size,
+            random_state=random_state,
+            shuffle=shuffle
+        )
+        self.quantile = quantile
+
+    def fit(self, _x_train, _y_train, m=1, epsilon=None):
+        super().fit(_x_train, _y_train, m=m, epsilon=epsilon)
+        if self.inductive:
+            from sklearn.model_selection import train_test_split
+            _, _, _, y_cal = train_test_split(
+                _x_train,
+                _y_train,
+                test_size=self.cal_size,
+                train_size=self.train_proper_size,
+                random_state=self.random_state,
+                shuffle=self.shuffle,
+                stratify=self.va_calibrator.stratify
+            )
+            y_cal = y_cal.flatten()
+            if self.quantile is not None:
+                y_star_lower = np.percentile(y_cal, self.quantile * 100)
+                y_star_upper = np.percentile(y_cal, (1 - self.quantile) * 100)
+            else:
+                y_star_lower = np.min(y_cal)
+                y_star_upper = np.max(y_cal)
+            
+            y_starred = y_cal.copy()
+            y_starred[y_cal < y_star_lower] = y_star_lower
+            y_starred[y_cal > y_star_upper] = y_star_upper
+            
+            self.va_calibrator.clf_y_cal = [y_starred]
+            self.va_calibrator.y_stars_lower = [y_star_lower]
+            self.va_calibrator.y_stars_upper = [y_star_upper]
+        else:
+            from sklearn.model_selection import KFold
+            kf = KFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
+            
+            self.va_calibrator.clf_y_cal = []
+            self.va_calibrator.y_stars_lower = []
+            self.va_calibrator.y_stars_upper = []
+            
+            for train_index, test_index in kf.split(_x_train, _y_train):
+                y_cal_fold = _y_train[test_index].flatten()
+                if self.quantile is not None:
+                    y_star_lower = np.percentile(y_cal_fold, self.quantile * 100)
+                    y_star_upper = np.percentile(y_cal_fold, (1 - self.quantile) * 100)
+                else:
+                    y_star_lower = np.min(y_cal_fold)
+                    y_star_upper = np.max(y_cal_fold)
+                
+                y_starred = y_cal_fold.copy()
+                y_starred[y_cal_fold < y_star_lower] = y_star_lower
+                y_starred[y_cal_fold > y_star_upper] = y_star_upper
+                
+                self.va_calibrator.clf_y_cal.append(y_starred)
+                self.va_calibrator.y_stars_lower.append(y_star_lower)
+                self.va_calibrator.y_stars_upper.append(y_star_upper)
+
 from data.other_datasets.datasets import GetDataset
 from data.uci_repository_datasets.datasets import load_dataset
 
@@ -328,6 +405,30 @@ def run_one_scenario(
             results[name + ' CVAP - ' + str(m)] = compute_metrics(
                 ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
             )
+
+        # Loose bounds CVAP
+        va_lb = VennAberRegressorLooseBounds(estimator=model, inductive=False, n_splits=10, random_state=seed)
+        va_lb.fit(ds.X_train, ds.y_train)
+        va_preds, intervals = va_lb.predict(ds.X_test)
+        n_samples_test = len(va_preds)
+        lower = intervals[:n_samples_test]
+        upper = intervals[n_samples_test:]
+        intervals = np.column_stack((lower, upper))
+        results[name + ' CVAP - loose-bounds'] = compute_metrics(
+            ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
+        )
+
+        # Quantile bounds CVAP
+        va_qb = VennAberRegressorLooseBounds(estimator=model, inductive=False, n_splits=10, random_state=seed, quantile=0.01)
+        va_qb.fit(ds.X_train, ds.y_train)
+        va_preds, intervals = va_qb.predict(ds.X_test)
+        n_samples_test = len(va_preds)
+        lower = intervals[:n_samples_test]
+        upper = intervals[n_samples_test:]
+        intervals = np.column_stack((lower, upper))
+        results[name + ' CVAP - quantile-bounds'] = compute_metrics(
+            ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
+        )
 
     return results, ds.meta
 
