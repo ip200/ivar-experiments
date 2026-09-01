@@ -36,7 +36,7 @@ MODEL_MAP = {
     "average": "average"
 }
 
-def get_tex_table(df_mean, df_std=None, p_values=None, title="", include_significance=True):
+def get_tex_table(df_mean, df_std=None, p_values=None, title=""):
     """
     df_mean: index=Model, cols=['Base', 'CVAR1', 'CVAR10']
     p_values: index=Model, cols=['CVAR1', 'CVAR10']
@@ -67,7 +67,7 @@ def get_tex_table(df_mean, df_std=None, p_values=None, title="", include_signifi
                 cell = f"{val:.3f} \\pm {sem:.3f}"
                 
                 # Significance markers for Table C
-                if include_significance and p_values is not None and i > 0:
+                if p_values is not None and i > 0:
                     if model in p_values.index and col_name in p_values.columns:
                         p = p_values.loc[model, col_name]
                         if val < row_vals[0]: # Only if better than base
@@ -93,8 +93,16 @@ def get_tex_table(df_mean, df_std=None, p_values=None, title="", include_signifi
     tex += "\\end{tabular}\n"
     return tex
 
-def generate_rebuttal(include_significance=True):
-    model_order = ["Elastic Net", "Gradient Boosting", "Lasso", "Linear Regression", "Random Forest", "Ridge", "SVR (RBF)", "average"]
+def generate_rebuttal():
+    with open("scratch/reference_tables.json", "r") as f:
+        ref_data = json.load(f)
+    
+    # 3. Friedman Swap (Reference ONLY)
+    # Pairs (9/10, 19/20, 29/30, 39/40)
+    for p1, p2 in [(9, 10), (19, 20), (29, 30), (39, 40)]:
+        s1, s2 = str(p1), str(p2)
+        if s1 in ref_data and s2 in ref_data:
+            ref_data[s1], ref_data[s2] = ref_data[s2], ref_data[s1]
 
     latex_output = "\\documentclass[a4paper,landscape]{article}\n"
     latex_output += "\\usepackage[utf8]{inputenc}\n"
@@ -112,13 +120,23 @@ def generate_rebuttal(include_significance=True):
     for table_num in range(1, 41):
         sc, n, noise = PAPER_MAPPING[table_num]
         
-        # 1. Experimental Data (Table B & C)
+        # 1. Reference Table (Table A)
+        ref_table = ref_data.get(str(table_num), {})
+        if not ref_table: continue
+        
+        ref_df = pd.DataFrame.from_dict(ref_table, orient='index', columns=['Base', 'CVAR1', 'CVAR10'])
+        model_order = ["Elastic Net", "Gradient Boosting", "Lasso", "Linear Regression", "Random Forest", "Ridge", "SVR (RBF)", "average"]
+        ref_df = ref_df.reindex(model_order).dropna()
+        
+        # 2. Experimental Data (Table B & C)
         csv_path = f"output/synthetic_datasets_{sc}_noise_{noise}_{n}_details.csv"
         if not os.path.exists(csv_path): continue
             
         df_details = pd.read_csv(csv_path)
         
         # Pivot to get raw values for t-test
+        # df_details has cols: scenario, seed, model, rmse, ...
+        # We need model names mapped to columns
         pivoted = df_details.pivot(index='seed', columns='model', values='rmse')
         
         final_mean = pd.DataFrame(index=model_order[:-1], columns=['Base', 'CVAR1', 'CVAR10'])
@@ -154,11 +172,13 @@ def generate_rebuttal(include_significance=True):
         final_std.loc['average'] = final_std.mean()
         
         # Calculate t-test for average row
+        # Average RMSE per seed across all models
         base_models = [m.replace(" ", "") for m in model_order[:-1]]
         avg_seed_base = pivoted[base_models].mean(axis=1)
         
         for col_our, col_paper in [('CVAP - 1', 'CVAR1'), ('CVAP - 10', 'CVAR10')]:
             c_models = [f"{m} {col_our}" for m in base_models]
+            # filter only existing columns
             c_models = [m for m in c_models if m in pivoted.columns]
             if c_models:
                 avg_seed_c = pivoted[c_models].mean(axis=1)
@@ -166,18 +186,18 @@ def generate_rebuttal(include_significance=True):
                 p_values.loc['average', col_paper] = p
         
         # Generate LaTeX
-        sc_tex = sc.replace('_', '\\_')
-        latex_output += f"\\section*{{Table {table_num}: {sc_tex} (n={n}, $\\sigma={noise}$)}}\n"
+        latex_output += f"\\section*{{Table {table_num}: {sc.replace('_', '\\_')} (n={n}, $\\sigma={noise}$)}}\n"
         latex_output += "\\begin{figure}[h]\n"
         latex_output += "  \\centering\n"
         
         for df, std, p, cap, title in [
+            (ref_df, None, None, "Paper Reference (Swapped F2/F3)", "Original (10 Seeds)"),
             (final_mean, None, None, "Our Results (Mean)", "Our Mean (100 Seeds)"),
             (final_mean, final_std, p_values, "Our Results (Mean $\\pm$ SEM + Sig)", "Our Mean $\\pm$ SEM")
         ]:
-            latex_output += "  \\begin{subtable}[b]{0.48\\textwidth}\n"
+            latex_output += "  \\begin{subtable}[b]{0.32\\textwidth}\n"
             latex_output += "    \\centering\n"
-            latex_output += get_tex_table(df, std, p, title=title, include_significance=include_significance)
+            latex_output += get_tex_table(df, std, p, title=title)
             latex_output += f"    \\caption{{{cap}}}\n"
             latex_output += "  \\end{subtable}\n"
             if cap != "Our Results (Mean $\\pm$ SEM + Sig)":
@@ -190,15 +210,17 @@ def generate_rebuttal(include_significance=True):
     # --- Section: Real World Datasets ---
     latex_output += "\\newpage\\section*{Real-World Benchmarks}\n"
     
+    # Mapping for Real World
     real_tasks = [
         (42, "climate_bias", "climate_bias", "Bias Correction (UCI)"),
         (44, "airfoil", "airfoil", "Airfoil Self-Noise (UCI)"),
         (43, "star", "star", "Student Performance (STAR)"),
-        (43, "wine_both", "wine_both", "Wine Quality (Combined)")
+        (None, "wine_red", "wine_red", "Wine Quality (Red)")
     ]
     
     for table_num, sc, csv_sc, title_name in real_tasks:
         csv_path = f"output/real_datasets_{csv_sc}_details.csv"
+        # Fallback for old climate bias file name if needed
         if csv_sc == "climate_bias" and not os.path.exists(csv_path):
             csv_path = "output/real_datasets_details.csv"
             
@@ -243,13 +265,24 @@ def generate_rebuttal(include_significance=True):
         latex_output += f"\\subsection*{{{title_name}}}\n"
         latex_output += "\\begin{figure}[h]\n  \\centering\n"
         
+        has_ref = table_num is not None and str(table_num) in ref_data
+        if has_ref:
+            ref_table = ref_data[str(table_num)]
+            ref_df = pd.DataFrame.from_dict(ref_table, orient='index', columns=['Base', 'CVAR1', 'CVAR10']).reindex(model_order).dropna()
+            
+            # Subtable A
+            latex_output += "  \\begin{subtable}[b]{0.32\\textwidth}\n    \\centering\n"
+            latex_output += get_tex_table(ref_df, title="Original Paper")
+            latex_output += f"    \\caption{{Paper Reference (Table {table_num})}}\n  \\end{{subtable}}\\hfill\n"
+            
         # Subtable B & C
-        latex_output += "  \\begin{subtable}[b]{0.48\\textwidth}\n    \\centering\n"
-        latex_output += get_tex_table(final_mean, title="Our Mean", include_significance=include_significance)
+        sub_width = "0.32" if has_ref else "0.48"
+        latex_output += f"  \\begin{{subtable}}[b]{{{sub_width}\\textwidth}}\n    \\centering\n"
+        latex_output += get_tex_table(final_mean, title="Our Mean")
         latex_output += f"    \\caption{{Our Results (Mean)}}\n  \\end{{subtable}}\\hfill\n"
         
-        latex_output += "  \\begin{subtable}[b]{0.48\\textwidth}\n    \\centering\n"
-        latex_output += get_tex_table(final_mean, final_std, p_values, title="Our Mean $\\pm$ SEM", include_significance=include_significance)
+        latex_output += f"  \\begin{{subtable}}[b]{{{sub_width}\\textwidth}}\n    \\centering\n"
+        latex_output += get_tex_table(final_mean, final_std, p_values, title="Our Mean $\\pm$ SEM")
         latex_output += f"    \\caption{{Our Results (Mean $\\pm$ SEM)}}\n  \\end{{subtable}}\n"
         latex_output += "\\end{figure}\n\\vspace{0.5cm}\n"
 
@@ -257,9 +290,10 @@ def generate_rebuttal(include_significance=True):
     latex_output += "\\newpage\\section*{New Bounded Synthetic Experiments (Tables 45--49)}\n"
     
     bounded_tasks = [
-        (45, "bounded_logistic", 1000, 1),
-        (46, "bounded_logistic", 1000, 3),
+        (45, "bounded_logistic", 10000, 1),
         (47, "bounded_logistic", 10000, 3),
+        (48, "bounded_logistic", 1000, 1),
+        (49, "bounded_logistic", 1000, 3),
     ]
     
     for table_num, sc, n, noise in bounded_tasks:
@@ -300,65 +334,19 @@ def generate_rebuttal(include_significance=True):
                 _, p = ttest_rel(avg_seed_base, avg_seed_c)
                 p_values.loc['average', c_paper] = p
 
-        sc_tex = sc.replace('_', '\\_')
-        latex_output += f"\\subsection*{{Table {table_num}: {sc_tex} (n={n}, noise={noise})}}\n"
+        latex_output += f"\\subsection*{{Table {table_num}: {sc.replace('_', '\\_')} (n={n}, noise={noise})}}\n"
         latex_output += "\\begin{figure}[h]\n  \\centering\n"
         
         # 2 tables only
         latex_output += "  \\begin{subtable}[b]{0.48\\textwidth}\n    \\centering\n"
-        latex_output += get_tex_table(final_mean, title="Our Mean", include_significance=include_significance)
+        latex_output += get_tex_table(final_mean, title="Our Mean")
         latex_output += f"    \\caption{{Our Results (Mean)}}\n  \\end{{subtable}}\\hfill\n"
         
         latex_output += "  \\begin{subtable}[b]{0.48\\textwidth}\n    \\centering\n"
-        latex_output += get_tex_table(final_mean, final_std, p_values, title="Our Mean $\\pm$ SEM", include_significance=include_significance)
+        latex_output += get_tex_table(final_mean, final_std, p_values, title="Our Mean $\\pm$ SEM")
         latex_output += f"    \\caption{{Our Results (Mean $\\pm$ SEM)}}\n  \\end{{subtable}}\n"
         latex_output += "\\end{figure}\n\\vspace{0.5cm}\n"
         if table_num % 2 == 1: latex_output += "\\newpage\n"
-
-    # --- Section: Naive IVAR vs IVAR 1 vs IVAR 10 Mean Interval Width ---
-    latex_output += "\\newpage\\section*{Naive IVAR vs IVAR 1 vs IVAR 10 Mean Interval Width (N=10,000, $\\sigma=3$)}\n"
-    latex_output += "\\begin{table}[h]\n  \\centering\n"
-    latex_output += "  \\begin{tabular}{lccc}\n"
-    latex_output += "  \\toprule\n"
-    latex_output += "  Dataset & naive IVAR & IVAR 1 & IVAR 10 \\\\\n"
-    latex_output += "  \\midrule\n"
-    
-    width_scenarios = [
-        ("linear_gaussian", "Linear Gaussian"),
-        ("nonlinear_sine", "Nonlinear Sine"),
-        ("heteroscedastic", "Heteroscedastic"),
-        ("heavy_tailed", "Heavy-tailed"),
-        ("outliers", "Outliers"),
-        ("sparse_highdim", "Sparse High-dimensional"),
-        ("covariate_shift", "Covariate Shift"),
-        ("bounded_logistic", "Bounded Logistic"),
-        ("friedman1", "Friedman 1"),
-        ("friedman2", "Friedman 2"),
-        ("friedman3", "Friedman 3")
-    ]
-    
-    for sc_key, sc_name in width_scenarios:
-        csv_path = f"output/synthetic_datasets_{sc_key}_noise_3_10000_details.csv"
-        if os.path.exists(csv_path):
-            df_details = pd.read_csv(csv_path)
-            gb_df = df_details[df_details['model'].str.startswith('GradientBoosting')]
-            
-            val_naive = gb_df[gb_df['model'] == 'GradientBoosting CVAP - loose-bounds']['width_mean'].mean()
-            val_ivar1 = gb_df[gb_df['model'] == 'GradientBoosting CVAP - 1']['width_mean'].mean()
-            val_ivar10 = gb_df[gb_df['model'] == 'GradientBoosting CVAP - 10']['width_mean'].mean()
-            
-            str_naive = f"{val_naive:.3f}" if not pd.isna(val_naive) else "—"
-            str_ivar1 = f"{val_ivar1:.3f}" if not pd.isna(val_ivar1) else "—"
-            str_ivar10 = f"{val_ivar10:.3f}" if not pd.isna(val_ivar10) else "—"
-            
-            latex_output += f"  {sc_name} & {str_naive} & {str_ivar1} & {str_ivar10} \\\\\n"
-        else:
-            latex_output += f"  {sc_name} & — & — & — \\\\\n"
-            
-    latex_output += "  \\bottomrule\n"
-    latex_output += "  \\end{tabular}\n"
-    latex_output += "  \\caption{Mean interval width comparison for naive IVAR (loose bounds), IVAR 1 ($m=1$), and IVAR 10 ($m=10$) using Gradient Boosting base model ($N=10,000$, $\\sigma=3$).}\n"
-    latex_output += "\\end{table}\n"
 
     latex_output += "\\end{document}\n"
     
@@ -366,10 +354,5 @@ def generate_rebuttal(include_significance=True):
         f.write(latex_output)
     print("Generated output/generate_tables.tex")
 
-
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--no_significance", action="store_true", help="Do not include significance asterisks in tables")
-    args = parser.parse_args()
-    generate_rebuttal(include_significance=not args.no_significance)
+    generate_rebuttal()

@@ -50,11 +50,7 @@ def run_scc_experiment(scenarios, seeds, n_samples=10000, noise_scale=3.0):
             # 2. CVAR1 (CVAP - 1) on full 80% train data
             va = VennAbersRegressor(estimator=GradientBoostingRegressor(random_state=seed), inductive=False, n_splits=10, random_state=seed)
             va.fit(ds.X_train, ds.y_train, m=1)
-            va_preds, intervals = va.predict(ds.X_test)
-            n_samples_test = len(va_preds)
-            lower = intervals[:n_samples_test]
-            upper = intervals[n_samples_test:]
-            cvar_intervals = np.column_stack((lower, upper))
+            va_preds, cvar_intervals = va.predict(ds.X_test)
             cvar_metrics = compute_metrics(
                 ds.y_test, va_preds, intervals=cvar_intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
             )

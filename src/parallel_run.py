@@ -59,9 +59,9 @@ if __name__ == "__main__":
     all_tasks.append(["real_datasets", "wine_both", None, None, 43])
     all_tasks.append(["real_datasets", "airfoil", None, None, 44])
     
-    # Tables 45-47: New Bounded Synthetic (Noise 1, 2, 3 at 10000 samples)
-    all_tasks.append(["synthetic_datasets", "bounded_logistic", 10000, 1, 45])
-    all_tasks.append(["synthetic_datasets", "bounded_logistic", 10000, 2, 46])
+    # Tables 45-47: New Bounded Synthetic
+    all_tasks.append(["synthetic_datasets", "bounded_logistic", 1000, 1, 45])
+    all_tasks.append(["synthetic_datasets", "bounded_logistic", 1000, 3, 46])
     all_tasks.append(["synthetic_datasets", "bounded_logistic", 10000, 3, 47])
     
     total_jobs = len(all_tasks)

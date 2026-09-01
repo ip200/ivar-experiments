@@ -27,7 +27,8 @@ class VennAbersRegressorLooseBounds(VennAbersRegressor):
             train_proper_size=None,
             random_state=None,
             shuffle=True,
-            quantile=None
+            quantile=None,
+            precision=None
     ):
         super().__init__(
             estimator=estimator,
@@ -36,7 +37,8 @@ class VennAbersRegressorLooseBounds(VennAbersRegressor):
             cal_size=cal_size,
             train_proper_size=train_proper_size,
             random_state=random_state,
-            shuffle=shuffle
+            shuffle=shuffle,
+            precision=precision
         )
         self.quantile = quantile
 
@@ -66,6 +68,8 @@ class VennAbersRegressorLooseBounds(VennAbersRegressor):
             y_starred[y_cal > y_star_upper] = y_star_upper
             
             self.va_calibrator.clf_y_cal = [y_starred]
+            self.va_calibrator.clf_y_cal_lower = [y_starred]
+            self.va_calibrator.clf_y_cal_upper = [y_starred]
             self.va_calibrator.y_stars_lower = [y_star_lower]
             self.va_calibrator.y_stars_upper = [y_star_upper]
         else:
@@ -73,6 +77,8 @@ class VennAbersRegressorLooseBounds(VennAbersRegressor):
             kf = KFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
             
             self.va_calibrator.clf_y_cal = []
+            self.va_calibrator.clf_y_cal_lower = []
+            self.va_calibrator.clf_y_cal_upper = []
             self.va_calibrator.y_stars_lower = []
             self.va_calibrator.y_stars_upper = []
             
@@ -90,6 +96,8 @@ class VennAbersRegressorLooseBounds(VennAbersRegressor):
                 y_starred[y_cal_fold > y_star_upper] = y_star_upper
                 
                 self.va_calibrator.clf_y_cal.append(y_starred)
+                self.va_calibrator.clf_y_cal_lower.append(y_starred)
+                self.va_calibrator.clf_y_cal_upper.append(y_starred)
                 self.va_calibrator.y_stars_lower.append(y_star_lower)
                 self.va_calibrator.y_stars_upper.append(y_star_upper)
 from data.other_datasets.datasets import GetDataset
@@ -421,10 +429,6 @@ def run_one_scenario(
         va_lb = VennAbersRegressorLooseBounds(estimator=model, inductive=False, n_splits=10, random_state=seed)
         va_lb.fit(ds.X_train, ds.y_train)
         va_preds, intervals = va_lb.predict(ds.X_test)
-        n_samples_test = len(va_preds)
-        lower = intervals[:n_samples_test]
-        upper = intervals[n_samples_test:]
-        intervals = np.column_stack((lower, upper))
         results[name + ' CVAP - loose-bounds'] = compute_metrics(
             ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
         )
@@ -433,10 +437,6 @@ def run_one_scenario(
         va_qb = VennAbersRegressorLooseBounds(estimator=model, inductive=False, n_splits=10, random_state=seed, quantile=0.01)
         va_qb.fit(ds.X_train, ds.y_train)
         va_preds, intervals = va_qb.predict(ds.X_test)
-        n_samples_test = len(va_preds)
-        lower = intervals[:n_samples_test]
-        upper = intervals[n_samples_test:]
-        intervals = np.column_stack((lower, upper))
         results[name + ' CVAP - quantile-bounds'] = compute_metrics(
             ds.y_test, va_preds, intervals=intervals, y_true_mean=ds.y_true_mean, y_train=ds.y_train
         )
